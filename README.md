@@ -271,3 +271,20 @@ print(tokenizer.batch_decode(outputs, skip_special_tokens=True)[0].split("### Re
 ## 📄 License
 
 This project is open-sourced under the [MIT License](./LICENSE) for educational and research purposes.
+
+---
+
+<div align="center">
+
+### 👤 Author & Contact
+
+**Manuel Mezo (Manu)** — *Applied AI Engineer & Robotics Builder*
+
+[![Website](https://img.shields.io/badge/🌐_Portfolio-www.cv.manuelmezo.com-111827?style=for-the-badge)](https://www.cv.manuelmezo.com)
+[![LinkedIn](https://img.shields.io/badge/LinkedIn-manuelmezo-0A66C2?style=for-the-badge&logo=linkedin&logoColor=white)](https://www.linkedin.com/in/manuelmezo/)
+[![Email](https://img.shields.io/badge/Email-manumezog%40gmail.com-EA4335?style=for-the-badge&logo=gmail&logoColor=white)](mailto:manumezog@gmail.com)
+
+📬 [manumezog@gmail.com](mailto:manumezog@gmail.com) · 🌐 [www.cv.manuelmezo.com](https://www.cv.manuelmezo.com) · 💼 [LinkedIn](https://www.linkedin.com/in/manuelmezo/)
+
+</div>
+
