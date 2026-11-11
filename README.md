@@ -186,6 +186,7 @@ To objectively verify what the LoRA fine-tuning achieved, Cell 5 of [`slm_finetu
   La sociedad [ORG_1] (CIF [ORG_2]) ha firmado una fusión con [ORG_3] SL en [LOC_1] por un importe de [MONEY_1].
   Mapping: [ORG_1] = Grupo Logístico del Norte SA, [ORG_2] = A55443322, [ORG_3] = Transportes Ibéricos SL, [LOC_1] = Valencia, [MONEY_1] = 1.200.000€.
   ```
+  > *Note on `[ORG_2]` vs `[ID_1]`:* Notice how the model preserved the exact 2-line schema and mapped every entity accurately, but labeled the tax ID (`A55443322`) as `[ORG_2]` instead of `[ID_1]`. This is a direct consequence of the synthetic dataset bias analyzed in **Finding #2** below (the 66 generated training rows contained `[ORG_x]`, `[PER_x]`, `[LOC_x]`, and `[MONEY_x]`, but zero `[ID_1]` examples).
 
 ---
 
@@ -199,6 +200,59 @@ To objectively verify what the LoRA fine-tuning achieved, Cell 5 of [`slm_finetu
   El empleado [PER_1] ha finalizado su contrato con la firma [ORG_1] recibiendo una indemnización de [MONEY_1] liquidados en [LOC_1].
   Mapping: [PER_1] = Antonio Fernández, [ORG_1] = Consultoría Tech SL, [MONEY_1] = 42.500€, [LOC_1] = Sevilla
   ```
+
+---
+
+## 🔄 Closing the Loop: Lookup Table Parsing & PII Re-Injection (Steps 2–4)
+
+Why does the strict 2-line output schema of the fine-tuned SLM matter so much? Because in production, **Steps 2, 3, and 4** of the privacy firewall are executed deterministically by the backend:
+
+1. **Step 2 (Parse & Store Lookup Table):** Split the SLM output at `\nMapping:` and parse each `[TAG] = Value` pair into an in-memory dictionary (`lookup_table`).
+2. **Step 3 (External RAG / LLM Call with Zero PII):** Send *only* the `sanitized_query` to the frontier LLM (e.g., DeepSeek / GPT-4 / Claude), instructing it to preserve the bracketed tags in its legal reasoning.
+3. **Step 4 (Re-Injection / Post-Processing):** Replace every placeholder token (`[PER_1]`, `[ORG_1]`, `[MONEY_1]`, `[LOC_1]`) in the LLM's response with its original value from `lookup_table`.
+
+```python
+import re
+
+def parse_slm_redaction(slm_output: str) -> tuple[str, dict[str, str]]:
+    """Step 2: Extracts the sanitized query and builds the in-memory PII lookup table."""
+    lines = [line.strip() for line in slm_output.strip().splitlines() if line.strip()]
+    sanitized_query = lines[0].replace("Sanitized:", "").strip()
+    mapping_line = lines[1].replace("Mapping:", "").strip()
+
+    # Parse deterministic '[TAG_X] = Original Value' pairs
+    lookup_table = {}
+    for pair in re.split(r",\s*(?=\[[A-Z]+_\d+\])", mapping_line):
+        if "=" in pair:
+            tag, value = pair.split("=", 1)
+            lookup_table[tag.strip()] = value.strip().rstrip(".")
+    return sanitized_query, lookup_table
+
+
+def reidentify_response(llm_response: str, lookup_table: dict[str, str]) -> str:
+    """Step 4: Re-injects the original PII values back into the external LLM's response."""
+    final_response = llm_response
+    for tag, original_value in lookup_table.items():
+        final_response = final_response.replace(tag, original_value)
+    return final_response
+```
+
+### End-to-End Re-Identification Trace (Scenario 4)
+
+```text
+1️⃣ RAW USER QUERY (Contains Sensitive PII):
+   "El empleado Antonio Fernández ha finalizado su contrato con la firma Consultoría Tech SL recibiendo una indemnización de 42.500€ liquidados en Sevilla."
+
+2️⃣ LOCAL FINE-TUNED SLM OUTPUT (Sanitized Query + Lookup Table):
+   Sanitized Query : "El empleado [PER_1] ha finalizado su contrato con la firma [ORG_1] recibiendo una indemnización de [MONEY_1] liquidados en [LOC_1]."
+   Lookup Table    : {'[PER_1]': 'Antonio Fernández', '[ORG_1]': 'Consultoría Tech SL', '[MONEY_1]': '42.500€', '[LOC_1]': 'Sevilla'}
+
+3️⃣ EXTERNAL CLOUD LLM RESPONSE (Sees ONLY Anonymized Tags — Zero PII Leaked):
+   "De acuerdo con el Artículo 7.e) de la Ley del IRPF, la indemnización de [MONEY_1] percibida por [PER_1] tras el cese de su relación laboral con [ORG_1] en [LOC_1] estará exenta de tributación hasta el límite máximo legal establecido en el Estatuto de los Trabajadores."
+
+4️⃣ FINAL RE-IDENTIFIED ANSWER DELIVERED TO USER (PII Restored Locally):
+   "De acuerdo con el Artículo 7.e) de la Ley del IRPF, la indemnización de 42.500€ percibida por Antonio Fernández tras el cese de su relación laboral con Consultoría Tech SL en Sevilla estará exenta de tributación hasta el límite máximo legal establecido en el Estatuto de los Trabajadores."
+```
 
 ---
 
