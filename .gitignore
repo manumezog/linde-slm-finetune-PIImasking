@@ -1,0 +1,19 @@
+# Python / Jupyter
+__pycache__/
+*.py[cod]
+.ipynb_checkpoints/
+
+# Training checkpoints & temporary outputs
+outputs/
+model/
+model_gguf/
+llama.cpp/
+unsloth_compiled_cache/
+# Personal / Session notes & large binaries
+*.pdf
+*.gguf
+*.zip
+
+# OS files
+.DS_Store
+Thumbs.db
